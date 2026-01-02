@@ -1,0 +1,9 @@
+{
+  "name": " Jarvis AI System",
+  "description": "A high-end, multi-agent voice assistant with a holographic 3D interface, powered by Gemini Live API.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation",
+    "camera"
+  ]
+}
