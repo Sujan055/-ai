@@ -3,6 +3,19 @@ import React, { useRef, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 
+// @ts-ignore - Define intrinsic elements as variables to avoid JSX type errors in environments
+// where @react-three/fiber types are not correctly mapped to JSX.IntrinsicElements.
+const Group = 'group' as any;
+const Points = 'points' as any;
+const BufferGeometry = 'bufferGeometry' as any;
+const BufferAttribute = 'bufferAttribute' as any;
+const PointsMaterial = 'pointsMaterial' as any;
+const Mesh = 'mesh' as any;
+const SphereGeometry = 'sphereGeometry' as any;
+const MeshBasicMaterial = 'meshBasicMaterial' as any;
+const AmbientLight = 'ambientLight' as any;
+const PointLight = 'pointLight' as any;
+
 const ParticleSphere = ({ color, isActive }: { color: string, isActive: boolean }) => {
   const pointsRef = useRef<THREE.Points>(null!);
   
@@ -32,17 +45,17 @@ const ParticleSphere = ({ color, isActive }: { color: string, isActive: boolean 
   });
 
   return (
-    <group>
-      <points ref={pointsRef}>
-        <bufferGeometry>
-          <bufferAttribute
+    <Group>
+      <Points ref={pointsRef}>
+        <BufferGeometry>
+          <BufferAttribute
             attach="attributes-position"
             count={spherePositions.length / 3}
             array={spherePositions}
             itemSize={3}
           />
-        </bufferGeometry>
-        <pointsMaterial
+        </BufferGeometry>
+        <PointsMaterial
           transparent
           color={color}
           size={0.03}
@@ -50,17 +63,17 @@ const ParticleSphere = ({ color, isActive }: { color: string, isActive: boolean 
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
-      </points>
-      <mesh>
-        <sphereGeometry args={[2.4, 32, 32]} />
-        <meshBasicMaterial 
+      </Points>
+      <Mesh>
+        <SphereGeometry args={[2.4, 32, 32]} />
+        <MeshBasicMaterial 
           color={color} 
           transparent 
           opacity={0.05} 
           wireframe
         />
-      </mesh>
-    </group>
+      </Mesh>
+    </Group>
   );
 };
 
@@ -68,8 +81,8 @@ const Hologram: React.FC<{ themeColor: string, isSpeaking: boolean }> = ({ theme
   return (
     <div className="w-full h-full absolute top-0 left-0 pointer-events-none">
       <Canvas camera={{ position: [0, 0, 8], fov: 45 }}>
-        <ambientLight intensity={0.5} />
-        <pointLight position={[10, 10, 10]} intensity={1} />
+        <AmbientLight intensity={0.5} />
+        <PointLight position={[10, 10, 10]} intensity={1} />
         <ParticleSphere color={themeColor} isActive={isSpeaking} />
       </Canvas>
     </div>

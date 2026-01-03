@@ -1,9 +1,9 @@
 {
-  "name": " Jarvis AI System",
-  "description": "A high-end, multi-agent voice assistant with a holographic 3D interface, powered by Gemini Live API.",
+  "name": "Nami AI System",
+  "description": "A sentient AI partner with a holographic interface and advanced creative engine.",
   "requestFramePermissions": [
+    "camera",
     "microphone",
-    "geolocation",
-    "camera"
+    "geolocation"
   ]
 }
