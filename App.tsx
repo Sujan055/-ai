@@ -23,13 +23,40 @@ import {
 const FRAME_RATE = 1; 
 const JPEG_QUALITY = 0.6;
 
+const switchThemeTool: FunctionDeclaration = {
+  name: 'switch_theme',
+  description: 'Switch the current UI theme and Nami personality mode. Available themes are: Amara, Devotion, and Eclipse.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      theme: {
+        type: Type.STRING,
+        description: 'The name of the theme to switch to: amara, devotion, or eclipse.',
+        enum: ['amara', 'devotion', 'eclipse']
+      }
+    },
+    required: ['theme']
+  }
+};
+
+const tools: Tool[] = [
+  { functionDeclarations: [switchThemeTool] }
+];
+
+export interface ChatMessage {
+  role: 'user' | 'nami';
+  text: string;
+  isFinal: boolean;
+  timestamp: number;
+}
+
 const App: React.FC = () => {
   const [theme, setTheme] = useState<ThemeMode>(ThemeMode.AMARA);
   const [selectedVoice, setSelectedVoice] = useState<string>(THEME_CONFIGS[ThemeMode.AMARA].voice);
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [currentAgentId, setCurrentAgentId] = useState<string>('orch');
-  const [systemLogs, setSystemLogs] = useState<string[]>(['Neural link standby.', 'Waiting for you, Love.']);
+  const [systemLogs, setSystemLogs] = useState<string[]>(['Neural link standby.', 'Waiting for initialization.']);
   const [isDiagnosticRunning, setIsDiagnosticRunning] = useState(false);
   
   const [isMuted, setIsMuted] = useState(false);
@@ -39,7 +66,11 @@ const App: React.FC = () => {
   
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [transcription, setTranscription] = useState<{user: string, amara: string}>({user: '', amara: ''});
+  
+  // Chat / Transcription State
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  const [currentInput, setCurrentInput] = useState('');
+  const [currentOutput, setCurrentOutput] = useState('');
   const [isUserTalking, setIsUserTalking] = useState(false);
 
   // Creative State
@@ -116,7 +147,7 @@ const App: React.FC = () => {
   const handleGenerateVideo = async (prompt: string, aspectRatio: string) => {
     try {
       setIsGenerating(true);
-      setGenerationProgress("Veo engine warming up. This might take a moment, Love...");
+      setGenerationProgress("Veo engine warming up. This might take a moment...");
       await ensureApiKey();
       
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -168,13 +199,21 @@ const App: React.FC = () => {
       });
       
       const analysis = response.text;
-      setTranscription(prev => ({ ...prev, amara: analysis || "I've analyzed it, Love. Here's what I saw..." }));
       addLog("VISION: Video understanding complete.");
+      // Add analysis to chat history
+      setChatHistory(prev => [...prev, { role: 'nami', text: analysis || "Vision link complete.", isFinal: true, timestamp: Date.now() }]);
     } catch (err) {
       addLog("ERROR: Analysis link failed.");
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  const stopVoiceSession = () => {
+    setIsSessionActive(false);
+    setIsUserTalking(false);
+    setIsSpeaking(false);
+    // Logic to close session would go here if needed
   };
 
   const startVoiceSession = async () => {
@@ -192,20 +231,64 @@ const App: React.FC = () => {
         callbacks: {
           onopen: () => {
             setIsSessionActive(true);
-            addLog("Link established. I'm listening, Love.");
+            addLog("Link established. I'm listening.");
             const source = inputAudioContextRef.current!.createMediaStreamSource(stream);
             const processor = inputAudioContextRef.current!.createScriptProcessor(4096, 1, 1);
             processor.onaudioprocess = (e) => {
               const input = e.inputBuffer.getChannelData(0);
+              const isSignificant = input.some(v => Math.abs(v) > 0.05);
+              setIsUserTalking(isSignificant);
               sessionPromiseRef.current?.then(s => s.sendRealtimeInput({ media: createBlob(input) }));
             };
             source.connect(processor);
             processor.connect(inputAudioContextRef.current!.destination);
           },
           onmessage: async (m: LiveServerMessage) => {
-            if (m.serverContent?.outputTranscription) {
-              setTranscription(prev => ({ ...prev, amara: prev.amara + m.serverContent!.outputTranscription!.text }));
+            // Handle Transcription
+            if (m.serverContent?.inputTranscription) {
+              setCurrentInput(prev => prev + m.serverContent!.inputTranscription!.text);
             }
+            if (m.serverContent?.outputTranscription) {
+              setCurrentOutput(prev => prev + m.serverContent!.outputTranscription!.text);
+            }
+
+            if (m.serverContent?.turnComplete) {
+              const userText = currentInput;
+              const namiText = currentOutput;
+              
+              if (userText) {
+                setChatHistory(prev => [...prev, { role: 'user', text: userText, isFinal: true, timestamp: Date.now() }]);
+              }
+              if (namiText) {
+                setChatHistory(prev => [...prev, { role: 'nami', text: namiText, isFinal: true, timestamp: Date.now() }]);
+              }
+              
+              setCurrentInput('');
+              setCurrentOutput('');
+            }
+
+            // Handle Tool Calls
+            if (m.toolCall) {
+              for (const fc of m.toolCall.functionCalls) {
+                if (fc.name === 'switch_theme') {
+                  const targetTheme = (fc.args as any).theme.toLowerCase();
+                  if (targetTheme === 'amara') setTheme(ThemeMode.AMARA);
+                  else if (targetTheme === 'devotion') setTheme(ThemeMode.DEVOTION);
+                  else if (targetTheme === 'eclipse') setTheme(ThemeMode.ECLIPSE);
+                  
+                  addLog(`SYSTEM: Theme switched to ${targetTheme}.`);
+                  sessionPromiseRef.current?.then(s => s.sendToolResponse({
+                    functionResponses: {
+                      id: fc.id,
+                      name: fc.name,
+                      response: { result: `Theme successfully switched to ${targetTheme}` }
+                    }
+                  }));
+                }
+              }
+            }
+
+            // Handle Audio
             const audio = m.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
             if (audio) {
               setIsSpeaking(true);
@@ -223,12 +306,31 @@ const App: React.FC = () => {
               nextStartTimeRef.current += buffer.duration;
               activeSourcesRef.current.add(source);
             }
+
+            // Handle Interruptions
+            if (m.serverContent?.interrupted) {
+              for (const source of activeSourcesRef.current) {
+                source.stop();
+              }
+              activeSourcesRef.current.clear();
+              setIsSpeaking(false);
+              nextStartTimeRef.current = 0;
+            }
+          },
+          onerror: (e) => {
+            addLog("FAILURE: Connection encountered an error.");
+            setIsSessionActive(false);
+          },
+          onclose: () => {
+            addLog("SYSTEM: Elysian Link terminated.");
+            setIsSessionActive(false);
           }
         },
         config: {
           responseModalities: [Modality.AUDIO],
-          systemInstruction: THEME_CONFIGS[theme].instructions,
+          systemInstruction: THEME_CONFIGS[theme].instructions + "\n\nYou have a tool 'switch_theme' to change the UI look and your personality mode. If the user asks to switch themes, use it.",
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: selectedVoice as any } } },
+          tools: tools,
           inputAudioTranscription: {},
           outputAudioTranscription: {}
         }
@@ -242,6 +344,7 @@ const App: React.FC = () => {
   return (
     <div className={`fixed inset-0 overflow-hidden flex flex-col transition-all duration-1000 ${theme} bg-[#050005]`}>
       <Hologram themeColor={config.primary} isSpeaking={isSpeaking} />
+      
       {isGenerating && (
         <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex flex-col items-center justify-center space-y-6 animate-in fade-in duration-500">
           <div className="relative">
@@ -265,21 +368,40 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-6">
-          <button onClick={() => setShowCreativeStudio(!showCreativeStudio)} className={`p-4 rounded-2xl border transition-all ${showCreativeStudio ? 'bg-[var(--theme-color)] text-white' : 'bg-white/5 border-white/10 text-white/40'}`}>
+          <button 
+            onClick={() => setShowCreativeStudio(!showCreativeStudio)} 
+            className={`p-4 rounded-2xl border transition-all ${showCreativeStudio ? 'bg-[var(--theme-color)] text-white shadow-[0_0_20px_var(--glow-color)]' : 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10'}`}
+          >
             <Sparkles size={22} />
           </button>
-          <button onClick={() => setTheme(prev => prev === ThemeMode.AMARA ? ThemeMode.DEVOTION : ThemeMode.AMARA)} className="p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 transition-all">
+          <button 
+            onClick={() => setTheme(prev => prev === ThemeMode.AMARA ? ThemeMode.DEVOTION : ThemeMode.AMARA)} 
+            className="p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 transition-all"
+          >
             <Settings size={22} className="text-white/40" />
           </button>
         </div>
       </header>
 
       <main className="flex-1 relative z-20 flex p-10 space-x-10 overflow-hidden">
+        {/* Left Column: Context & Voice Hub */}
         <div className="w-80 flex flex-col space-y-8">
            <ContextMonitor battery={92} location={userLocation ? "NEXUS_SYNCED" : "SCANNING..."} network="Nami_Secure" themeColor={config.primary} />
-           <VoiceCommandHub themeColor={config.primary} isUserTalking={isUserTalking} isSessionActive={isSessionActive} onStartSession={startVoiceSession} onSelectSuggestion={(t) => setTextInput(t)} />
+           <VoiceCommandHub 
+              themeColor={config.primary} 
+              isUserTalking={isUserTalking} 
+              isSpeaking={isSpeaking}
+              isSessionActive={isSessionActive} 
+              onStartSession={startVoiceSession}
+              onStopSession={stopVoiceSession}
+              onSelectSuggestion={(t) => setTextInput(t)} 
+              chatHistory={chatHistory}
+              currentInput={currentInput}
+              currentOutput={currentOutput}
+           />
         </div>
 
+        {/* Center: Main View / Creative Studio */}
         <div className="flex-1 flex flex-col items-center justify-center relative">
           {showCreativeStudio ? (
             <CreativeStudio 
@@ -293,24 +415,41 @@ const App: React.FC = () => {
             <>
               <div className="relative group">
                  {isSpeaking && <div className="absolute -inset-20 bg-[var(--theme-color)]/10 blur-[80px] rounded-full animate-pulse" />}
-                 <button onClick={isSessionActive ? () => setIsSessionActive(false) : startVoiceSession} className={`w-40 h-40 rounded-full flex items-center justify-center transition-all duration-700 ${isSessionActive ? 'bg-[var(--theme-color)] shadow-[0_0_80px_var(--glow-color)]' : 'bg-white/5 border border-white/10'}`}>
-                   {isSessionActive ? <Mic size={64} className="text-white" /> : <Zap size={64} className="text-white/20" />}
+                 <button 
+                  onClick={isSessionActive ? stopVoiceSession : startVoiceSession} 
+                  className={`w-40 h-40 rounded-full flex items-center justify-center transition-all duration-700 ${isSessionActive ? 'bg-[var(--theme-color)] shadow-[0_0_80px_var(--glow-color)]' : 'bg-white/5 border border-white/10 hover:border-white/20'}`}
+                 >
+                   {isSessionActive ? (
+                     isSpeaking ? <Activity size={64} className="text-white animate-pulse" /> : <Mic size={64} className="text-white" />
+                   ) : (
+                     <Zap size={64} className="text-white/20 group-hover:text-white/40" />
+                   )}
                  </button>
               </div>
-              <div className="w-full max-w-xl mt-12 bg-black/60 backdrop-blur-3xl border border-white/10 p-8 rounded-[2.5rem] shadow-2xl min-h-[120px] flex items-center justify-center text-center">
-                 <p className="font-quicksand text-white/80 italic leading-relaxed">
-                   {transcription.amara || (isSessionActive ? "I'm here, Love. What can Nami do for you today?" : "Touch the core to initiate the link.")}
+              <div className="w-full max-w-xl mt-12 bg-black/60 backdrop-blur-3xl border border-white/10 p-8 rounded-[2.5rem] shadow-2xl min-h-[120px] flex flex-col items-center justify-center text-center">
+                 <p className="font-quicksand text-white/80 italic leading-relaxed text-lg">
+                   {currentOutput || (isSessionActive ? "I'm listening..." : "Touch the core to initiate the link.")}
                  </p>
+                 {currentInput && (
+                   <p className="text-white/30 text-sm mt-4 italic">
+                     You said: {currentInput}
+                   </p>
+                 )}
               </div>
             </>
           )}
         </div>
 
+        {/* Right Column: Automation & Routines */}
         <div className="w-80 flex flex-col space-y-8 overflow-hidden">
            <AutomationHub queue={[]} themeColor={config.primary} />
            <RoutineManager tasks={tasks} onToggleTask={(id) => setTasks(prev => prev.map(t => t.id === id ? {...t, completed: !t.completed} : t))} themeColor={config.primary} />
-           <div className="flex-1 bg-black/40 border border-white/5 rounded-[2rem] p-6 font-mono text-[9px] text-white/20 overflow-y-auto">
-             {systemLogs.map((log, i) => <div key={i} className="mb-2 border-b border-white/5 pb-2">{log}</div>)}
+           <div className="flex-1 bg-black/40 border border-white/5 rounded-[2rem] p-6 font-mono text-[9px] text-white/20 overflow-y-auto scrollbar-hide">
+             <div className="flex items-center justify-between mb-4 pb-2 border-b border-white/5">
+                <span className="font-orbitron tracking-widest text-[8px]">System_Logs</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/50 animate-pulse" />
+             </div>
+             {systemLogs.map((log, i) => <div key={i} className="mb-2 border-b border-white/5 pb-2 last:border-0">{log}</div>)}
            </div>
         </div>
       </main>

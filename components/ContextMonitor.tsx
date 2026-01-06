@@ -64,7 +64,7 @@ const ContextMonitor: React.FC<ContextMonitorProps> = ({ battery, location, netw
       {battery < 25 && (
         <div className="p-3 bg-red-400/10 border border-red-400/20 rounded-xl animate-in slide-in-from-bottom-2">
           <p className="text-[8px] font-quicksand text-red-400 leading-tight">
-            "Your phone is getting tired, Love. Should I enable the Power Saver protocol for you?"
+            "Your battery level is critical. Should I enable the Power Saver protocol for you?"
           </p>
         </div>
       )}

@@ -18,10 +18,44 @@ const CreativeStudio: React.FC<CreativeStudioProps> = ({
   const [prompt, setPrompt] = useState('');
   const [aspectRatio, setAspectRatio] = useState('1:1');
   const [resolution, setResolution] = useState('1K');
+  const [isDragging, setIsDragging] = useState(false);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) onAnalyzeVideo(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith('video/')) {
+      onAnalyzeVideo(file);
+    }
+  };
+
+  // Helper to switch tabs and reset aspect ratio to a valid default for the new mode
+  const switchTab = (tab: 'image' | 'video' | 'vision') => {
+    setActiveTab(tab);
+    if (tab === 'video') {
+      setAspectRatio('16:9');
+    } else if (tab === 'image') {
+      setAspectRatio('1:1');
+    }
   };
 
   return (
@@ -29,20 +63,47 @@ const CreativeStudio: React.FC<CreativeStudioProps> = ({
       <div className="bg-black/60 backdrop-blur-3xl border border-white/10 rounded-[3rem] p-10 flex-1 flex flex-col overflow-hidden">
         <div className="flex items-center justify-between mb-8">
           <div className="flex space-x-4">
-            <button onClick={() => setActiveTab('image')} className={`px-6 py-2 rounded-full text-[10px] font-orbitron tracking-widest uppercase transition-all ${activeTab === 'image' ? 'bg-[var(--theme-color)] text-white' : 'bg-white/5 text-white/40'}`}>Images</button>
-            <button onClick={() => setActiveTab('video')} className={`px-6 py-2 rounded-full text-[10px] font-orbitron tracking-widest uppercase transition-all ${activeTab === 'video' ? 'bg-[var(--theme-color)] text-white' : 'bg-white/5 text-white/40'}`}>Video</button>
-            <button onClick={() => setActiveTab('vision')} className={`px-6 py-2 rounded-full text-[10px] font-orbitron tracking-widest uppercase transition-all ${activeTab === 'vision' ? 'bg-[var(--theme-color)] text-white' : 'bg-white/5 text-white/40'}`}>Vision</button>
+            <button onClick={() => switchTab('image')} className={`px-6 py-2 rounded-full text-[10px] font-orbitron tracking-widest uppercase transition-all ${activeTab === 'image' ? 'bg-[var(--theme-color)] text-white' : 'bg-white/5 text-white/40'}`}>Images</button>
+            <button onClick={() => switchTab('video')} className={`px-6 py-2 rounded-full text-[10px] font-orbitron tracking-widest uppercase transition-all ${activeTab === 'video' ? 'bg-[var(--theme-color)] text-white' : 'bg-white/5 text-white/40'}`}>Video</button>
+            <button onClick={() => switchTab('vision')} className={`px-6 py-2 rounded-full text-[10px] font-orbitron tracking-widest uppercase transition-all ${activeTab === 'vision' ? 'bg-[var(--theme-color)] text-white' : 'bg-white/5 text-white/40'}`}>Vision</button>
           </div>
           <Wand2 className="text-[var(--theme-color)] animate-pulse" size={20} />
         </div>
 
         <div className="flex-1 overflow-y-auto space-y-8 pr-4 scrollbar-hide">
           {activeTab === 'vision' ? (
-            <div className="h-full flex flex-col items-center justify-center space-y-6 border-2 border-dashed border-white/5 rounded-[2rem]">
-               <div className="p-8 bg-white/5 rounded-full text-[var(--theme-color)]"><MonitorPlay size={48} /></div>
-               <p className="text-white/40 font-quicksand text-center">Drop a video here, Love.<br/>I'll watch it and tell you everything.</p>
+            <div 
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              className={`h-full flex flex-col items-center justify-center space-y-6 border-2 border-dashed rounded-[2rem] transition-all duration-300 ${
+                isDragging 
+                  ? 'border-[var(--theme-color)] bg-[var(--theme-color)]/10 shadow-[0_0_30px_var(--glow-color)]' 
+                  : 'border-white/5 bg-transparent'
+              }`}
+            >
+               <div className={`p-8 bg-white/5 rounded-full transition-all duration-500 ${isDragging ? 'text-[var(--theme-color)] scale-110' : 'text-white/20'}`}>
+                 <MonitorPlay size={48} className={isDragging ? 'animate-pulse' : ''} />
+               </div>
+               <div className="text-center space-y-2">
+                 <p className={`font-quicksand transition-colors duration-300 ${isDragging ? 'text-white font-medium' : 'text-white/40'}`}>
+                   {isDragging ? "Ready for analysis, drop the file." : "Drop a video here."}
+                 </p>
+                 {!isDragging && (
+                   <p className="text-white/20 text-[10px] font-orbitron uppercase tracking-widest">
+                     I'll watch it and provide a detailed summary.
+                   </p>
+                 )}
+               </div>
                <input type="file" accept="video/*" onChange={handleFileUpload} className="hidden" id="video-upload" />
-               <label htmlFor="video-upload" className="px-8 py-3 bg-[var(--theme-color)] text-white rounded-full font-orbitron text-[10px] tracking-widest uppercase cursor-pointer hover:scale-105 transition-transform">Select Video</label>
+               <label 
+                 htmlFor="video-upload" 
+                 className={`px-8 py-3 bg-[var(--theme-color)] text-white rounded-full font-orbitron text-[10px] tracking-widest uppercase cursor-pointer hover:scale-105 transition-all shadow-[0_0_15px_var(--glow-color)] ${
+                   isDragging ? 'opacity-0 pointer-events-none translate-y-4' : 'opacity-100 translate-y-0'
+                 }`}
+               >
+                 Select Video
+               </label>
             </div>
           ) : (
             <div className="space-y-6">
@@ -55,12 +116,22 @@ const CreativeStudio: React.FC<CreativeStudioProps> = ({
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="text-[9px] font-orbitron text-white/30 uppercase tracking-widest">Aspect Ratio</label>
+                  {/* Fixed: Conditional aspect ratios restricted to valid model values */}
                   <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-white/60 text-xs outline-none">
-                    <option value="1:1">1:1 Square</option>
-                    <option value="16:9">16:9 Wide</option>
-                    <option value="9:16">9:16 Tall</option>
-                    <option value="4:3">4:3 Classic</option>
-                    <option value="21:9">21:9 Ultrawide</option>
+                    {activeTab === 'image' ? (
+                      <>
+                        <option value="1:1">1:1 Square</option>
+                        <option value="3:4">3:4 Portrait</option>
+                        <option value="4:3">4:3 Landscape</option>
+                        <option value="9:16">9:16 Story</option>
+                        <option value="16:9">16:9 Cinematic</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="16:9">16:9 Landscape</option>
+                        <option value="9:16">9:16 Portrait</option>
+                      </>
+                    )}
                   </select>
                 </div>
                 {activeTab === 'image' && (
